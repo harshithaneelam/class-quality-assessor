@@ -1,6 +1,6 @@
 # Online Class Quality Assessor
 
-**Live Application:** <TBD — insert Streamlit Community Cloud URL>
+**Live Application:** https://classquality.streamlit.app/
 
 Rates a recorded online children's class (chess lessons on a video-call platform) as
 **Excellent / Good / Average / Poor** and backs the rating with **timestamped `[MM:SS]` evidence**:
