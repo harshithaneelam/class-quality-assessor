@@ -71,3 +71,22 @@ def test_cache_key_depends_on_config_and_audio(wav, tmp_path):
     other = tmp_path / "b.wav"
     other.write_bytes(wav.read_bytes()[:-2] + b"\x01\x02")
     assert tr.audio_fingerprint(other) != tr.audio_fingerprint(wav)
+
+
+def test_chunked_cpu_transcription_offsets_timestamps(wav, monkeypatch):
+    calls = []
+
+    class ChunkModel:
+        def transcribe(self, audio, **kw):
+            calls.append(len(audio))
+            segs = [SimpleNamespace(start=0.2, end=1.0, text=" hello", avg_logprob=-0.2, no_speech_prob=0.01)]
+            return iter(segs), SimpleNamespace(duration=len(audio) / 16000, language="en")
+
+    monkeypatch.setattr(tr, "_load_model", lambda *a, **k: ChunkModel())
+    monkeypatch.setenv("WHISPER_CHUNK_SEC", "4")
+    r = tr.transcribe_audio(wav, device="cpu")
+    assert len(calls) >= 2 and sum(calls) == 16000 * 10  # every sample transcribed exactly once
+    starts = [s["start"] for s in r["segments"]]
+    assert starts == sorted(starts) and starts[0] == 0.2 and starts[-1] > 4
+    assert [s["id"] for s in r["segments"]] == list(range(len(starts)))
+    assert r["duration_sec"] == 10.0

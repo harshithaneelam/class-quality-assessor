@@ -118,6 +118,8 @@ def main() -> None:
     tmp = tempfile.TemporaryDirectory(prefix="class_upload_", ignore_cleanup_errors=True)
     try:
         source = url.strip() if is_supported_link(url) else save_upload(uploaded, Path(tmp.name))
+        uploaded = None  # drop our reference to the in-memory upload before processing
+        gc.collect()
         result = run(source, LANGUAGES[lang_name], progress_bar, status)
     except ValueError as e:
         st.error(str(e))

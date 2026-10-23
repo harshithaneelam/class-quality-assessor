@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import gc
 import json
+import os
 import re
 import tempfile
 import time
@@ -26,7 +27,7 @@ from src.audio_extract import extract_wav_16k_mono
 from src.audio_features import extract_audio_features
 from src.deidentify import deidentify_transcript
 from src.speaker_roles import attribute_speaker_roles
-from src.transcribe import audio_fingerprint, transcribe_audio
+from src.transcribe import audio_fingerprint, release_models, transcribe_audio
 from src.transcript_features import extract_transcript_features
 from src.utils.cuda_setup import register_cuda_dlls
 from src.visual_features import FaceDetector, aggregate_visual, default_models_dir, load_logo_templates, measure_video
@@ -93,7 +94,10 @@ def _probe_video(path: Path) -> None:
 
 # ================================================================ helpers
 def pick_device() -> tuple[str, str]:
-    """('cuda', 'int8_float16') when a CUDA device is available, else ('cpu', 'int8')."""
+    """('cuda', 'int8_float16') when a CUDA device is available, else ('cpu', 'int8').
+    ASSESSOR_DEVICE=cpu forces the CPU path."""
+    if os.environ.get("ASSESSOR_DEVICE", "").lower() == "cpu":
+        return "cpu", "int8"
     register_cuda_dlls()
     try:
         import ctranslate2
@@ -116,7 +120,7 @@ _SNIPPET_KEYS = {"individual_question_examples", "homework_snippet"}
 
 # ================================================================ pipeline
 def assess_video_pipeline(video_path_or_url: str | Path, language: str = "en", progress_cb=None, *,
-                          use_llm: bool = True, whisper_model: str = "small", models_dir: str | Path | None = None,
+                          use_llm: bool = True, whisper_model: str | None = None, models_dir: str | Path | None = None,
                           llm_cache_dir: str | Path | None = None, sample_every_sec: float = 10.0,
                           transcribe_fn=None, judge_fn=None, detector=None) -> dict:
     """Assess one class recording. Returns {"assessment", "telemetry", "llm", ...}.
@@ -128,6 +132,8 @@ def assess_video_pipeline(video_path_or_url: str | Path, language: str = "en", p
         if progress_cb:
             progress_cb(round(min(1.0, max(0.0, frac)), 3), desc)
 
+    # WHISPER_MODEL (e.g. "base" in Streamlit secrets / env) trades accuracy for memory.
+    whisper_model = whisper_model or os.environ.get("WHISPER_MODEL", "small")
     timings: dict[str, float] = {}
     tmp = tempfile.TemporaryDirectory(prefix="class_assess_", ignore_cleanup_errors=True)
     tmp_path = Path(tmp.name)
@@ -172,6 +178,7 @@ def assess_video_pipeline(video_path_or_url: str | Path, language: str = "en", p
             wav, model_name=whisper_model, language=language, device=device, compute_type=compute, beam_size=1,
             progress_callback=lambda f: report(0.40 + 0.42 * f, "Transcribing speech"))
         timings["transcribe"] = time.perf_counter() - t0
+        release_models()  # drop the Whisper model before de-id / roles / scoring (small containers)
         gc.collect()
         report(0.82, "De-identifying and scoring")
 

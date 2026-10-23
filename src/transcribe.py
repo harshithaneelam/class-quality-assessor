@@ -72,6 +72,40 @@ def _wav_duration(wav_path: Path) -> float:
         return 0.0
 
 
+def _append_segment(segments: list, s, offset: float, total: float, progress_callback) -> None:
+    segments.append({"id": len(segments), "start": round(s.start + offset, 2), "end": round(s.end + offset, 2),
+                     "text": s.text, "avg_logprob": round(s.avg_logprob, 4),
+                     "no_speech_prob": round(s.no_speech_prob, 4)})
+    if progress_callback and total > 0:
+        progress_callback(min(1.0, (s.end + offset) / total))
+
+
+def _read_wav_slice(wav_path: Path, start: float, end: float):
+    import numpy as np
+    import soundfile as sf
+    with sf.SoundFile(str(wav_path)) as f:
+        sr = f.samplerate
+        f.seek(int(start * sr))
+        return np.ascontiguousarray(f.read(int((end - start) * sr), dtype="float32", always_2d=False))
+
+
+def _chunk_bounds(wav_path: Path, total: float, chunk_sec: float, search_sec: float = 20.0) -> list[tuple[float, float]]:
+    """Window bounds ~chunk_sec apart, each cut moved to the quietest 1 s within +/- search_sec."""
+    import numpy as np
+    cuts, t = [0.0], chunk_sec
+    while t < total - chunk_sec * 0.25:
+        lo, hi = max(cuts[-1] + 1.0, t - search_sec), min(total, t + search_sec)
+        x = _read_wav_slice(wav_path, lo, hi)
+        n = len(x) // 16000
+        if n >= 1:
+            rms = np.sqrt((x[: n * 16000].reshape(n, 16000) ** 2).mean(axis=1))
+            t = lo + float(np.argmin(rms)) + 0.5
+        cuts.append(t)
+        t += chunk_sec
+    cuts.append(total)
+    return list(zip(cuts[:-1], cuts[1:]))
+
+
 def transcribe_audio(wav_path: str | Path, model_name: str = "small", language: str = "en",
                      device: str = "auto", compute_type: str = "default", beam_size: int = 1,
                      cache_dir: str | Path | None = None, progress_callback=None,
@@ -94,16 +128,27 @@ def transcribe_audio(wav_path: str | Path, model_name: str = "small", language: 
         cpu_threads = int(os.environ.get("WHISPER_CPU_THREADS", "2"))
     model = _load_model(model_name, device, compute_type, cpu_threads)
     t0 = time.perf_counter()
-    seg_iter, info = model.transcribe(str(wav_path), language=language, beam_size=beam_size,
-                                      vad_filter=True, vad_parameters=VAD_PARAMETERS)
-    total = float(getattr(info, "duration", 0.0) or _wav_duration(wav_path))
+    chunk_sec = float(os.environ.get("WHISPER_CHUNK_SEC", "600" if device == "cpu" else "0"))
+    total = _wav_duration(wav_path)
     segments = []
-    for i, s in enumerate(seg_iter):  # decoding happens while iterating
-        segments.append({"id": i, "start": round(s.start, 2), "end": round(s.end, 2), "text": s.text,
-                         "avg_logprob": round(s.avg_logprob, 4),
-                         "no_speech_prob": round(s.no_speech_prob, 4)})
-        if progress_callback and total > 0:
-            progress_callback(min(1.0, s.end / total))
+    if chunk_sec > 0 and total > chunk_sec * 1.25:
+        # faster-whisper builds log-mel features for the whole input at once (>2.5 GB peak for a
+        # 45-min class on CPU). Transcribe ~10-min windows read straight from the WAV instead,
+        # cutting at the quietest second near each boundary, and shift timestamps back.
+        for start, end in _chunk_bounds(wav_path, total, chunk_sec):
+            audio = _read_wav_slice(wav_path, start, end)
+            seg_iter, _info = model.transcribe(audio, language=language, beam_size=beam_size,
+                                               vad_filter=True, vad_parameters=VAD_PARAMETERS)
+            for s in seg_iter:
+                _append_segment(segments, s, start, total, progress_callback)
+            del audio, seg_iter
+            gc.collect()
+    else:
+        seg_iter, info = model.transcribe(str(wav_path), language=language, beam_size=beam_size,
+                                          vad_filter=True, vad_parameters=VAD_PARAMETERS)
+        total = float(getattr(info, "duration", 0.0) or total)
+        for s in seg_iter:  # decoding happens while iterating
+            _append_segment(segments, s, 0.0, total, progress_callback)
     wall = time.perf_counter() - t0
     if progress_callback:
         progress_callback(1.0)

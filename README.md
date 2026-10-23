@@ -158,6 +158,9 @@ A CUDA GPU is used automatically when available (`int8_float16`); otherwise CPU 
    `streamlit_app.py`.
 2. Advanced settings → Python **3.11** (also pinned by `.python-version`).
 3. Secrets → add `GEMINI_API_KEY = "..."` (optional; without it the deterministic rubric writes the evidence).
-4. Deploy. The first run downloads the Whisper `small` model (~460 MB); expect ~10–15 min per
+4. Optional memory switches (Secrets or environment): `WHISPER_MODEL = "base"` uses a smaller speech
+   model; `WHISPER_CHUNK_SEC` sets the CPU transcription window (default 600 s; `0` = whole file).
+   With the defaults a 44-min class peaks at ~1.3 GB resident (measured locally on CPU).
+5. Deploy. The first run downloads the Whisper `small` model (~460 MB); expect ~10–15 min per
    45–60 min class on the free 2-core CPU, and prefer Google Drive links for large recordings
    (`.streamlit/config.toml` caps uploads at 500 MB).
