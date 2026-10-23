@@ -1,0 +1,16 @@
+{
+ "label_source": "deterministic",
+ "deterministic_cutoffs": [
+  0.0,
+  39.35,
+  71.8
+ ],
+ "fused_cutoffs_reference": [
+  0.0,
+  58.15,
+  74.9
+ ],
+ "prompt_version": "judge-v2",
+ "fit_on": "10 labelled classes",
+ "note": "Composite cutoffs Poor|Average|Good|Excellent on the deterministic composite; gates in src/scorer.py override. Gemini supplies summary + evidence text only."
+}

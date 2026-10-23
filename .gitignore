@@ -1,0 +1,54 @@
+# Secrets
+.env
+*.env
+!.env.example
+
+# Media (raw recordings never enter the repo)
+*.mp4
+*.mkv
+*.webm
+*.mov
+*.avi
+*.wav
+*.mp3
+*.m4a
+*.flac
+
+# Transcripts / subtitles / unmasked text (data files only — not code such as
+# src/transcript_features.py)
+*.vtt
+*.srt
+transcripts*/
+masked_transcripts/
+transcribe_cache/
+*transcript*.json
+*transcript*.txt
+*unmasked*
+
+# Python / tooling
+__pycache__/
+*.pyc
+.venv/
+venv/
+.cache/
+cache/
+
+# Local data & artefacts
+data/
+frames/
+outputs/
+*.jpg
+*.jpeg
+*.png
+video_index.json
+.gradio/
+
+# Local Claude Code overrides
+.claude/settings.local.json
+
+# Streamlit secrets (GEMINI_API_KEY) — never commit
+.streamlit/secrets.toml
+
+# Bundled numeric assets are intentionally tracked
+!assets/*.npz
+!assets/*.onnx

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(C:/challenge-data/**)",
+      "Read(C:\\challenge-data\\**)",
+      "Edit(C:/challenge-data/**)",
+      "Edit(C:\\challenge-data\\**)"
+    ]
+  }
+}
